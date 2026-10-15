@@ -1,6 +1,44 @@
 @Ecommerce.Api_HostAddress = http://localhost:5162
+@token = paste-jwt-token-here
+@orderId = 1
 
-GET {{Ecommerce.Api_HostAddress}}/weatherforecast/
+### Login as a development customer (copy the returned token into @token)
+POST {{Ecommerce.Api_HostAddress}}/auth/login
+Content-Type: application/json
+
+{
+  "username": "Gabriel",
+  "password": "Pass123@"
+}
+
+### List products (public)
+GET {{Ecommerce.Api_HostAddress}}/products
 Accept: application/json
 
-###
+### Get a product (public)
+GET {{Ecommerce.Api_HostAddress}}/products/1
+Accept: application/json
+
+### Create an order (requires a customer/admin token)
+POST {{Ecommerce.Api_HostAddress}}/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "productId": 1,
+      "quantity": 1
+    }
+  ]
+}
+
+### List the current user's orders
+GET {{Ecommerce.Api_HostAddress}}/orders/my
+Authorization: Bearer {{token}}
+Accept: application/json
+
+### Simulate a Pix payment (replace @orderId with the created order ID)
+POST {{Ecommerce.Api_HostAddress}}/payments/pix/{{orderId}}
+Authorization: Bearer {{token}}
+Accept: application/json

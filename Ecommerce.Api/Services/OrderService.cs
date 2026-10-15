@@ -102,7 +102,7 @@ public class OrderService
         try
         {
             await using var transaction = await _db.Database.BeginTransactionAsync();
-            var order = await _db.Orders.Include(candidate => candidate.Items)
+            var order = await _db.Orders
                 .FirstOrDefaultAsync(candidate => candidate.Id == orderId);
 
             if (order is null)

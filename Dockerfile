@@ -1,12 +1,10 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY BigEcommerce.sln ./
 COPY Ecommerce.Api/Ecommerce.Api.csproj Ecommerce.Api/
-COPY Ecommerce.Tests/Ecommerce.Tests.csproj Ecommerce.Tests/
-RUN dotnet restore BigEcommerce.sln
+RUN dotnet restore Ecommerce.Api/Ecommerce.Api.csproj
 
-COPY . .
+COPY Ecommerce.Api/ Ecommerce.Api/
 RUN dotnet publish Ecommerce.Api/Ecommerce.Api.csproj \
     --configuration Release \
     --output /app/publish \
