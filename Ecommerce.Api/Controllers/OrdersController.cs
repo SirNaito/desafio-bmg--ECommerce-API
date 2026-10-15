@@ -21,17 +21,24 @@ namespace Ecommerce.Api.Controllers
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] OrderCreateReq req)
         {
-            int userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
+            if (!int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+                return Unauthorized();
+
             var result = await _service.CreateOrderAsync(userId, req.Items);
             if (!result.Success) return BadRequest(result.Message);
-            return Ok(result.Order);
+            return CreatedAtAction(nameof(MyOrders), new { id = result.Order!.Id }, result.Order);
         }
 
         [HttpGet("my")]
-        public IActionResult MyOrders([FromServices] Ecommerce.Api.Data.AppDbContext db)
+        public async Task<IActionResult> MyOrders([FromServices] Ecommerce.Api.Data.AppDbContext db)
         {
-            int userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
-            var orders = db.Orders.Where(o => o.UserId == userId).ToList();
+            if (!int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+                return Unauthorized();
+
+            var orders = await db.Orders
+                .Where(order => order.UserId == userId)
+                .OrderByDescending(order => order.CreatedAt)
+                .ToListAsync();
             return Ok(orders);
         }
     }
