@@ -1,0 +1,19 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: Data Source=/app/data/ecommerce.db
+      Jwt__Secret: ${JWT_SECRET:-local-development-only-secret-change-before-deploying}
+      Jwt__Issuer: BigEcom
+      Jwt__Audience: BigEcomAudience
+    volumes:
+      - ecommerce-data:/app/data
+
+volumes:
+  ecommerce-data:

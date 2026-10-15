@@ -1,75 +1,76 @@
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Authorization;
 using Ecommerce.Api.Data;
-using Ecommerce.Api.Models;
-using Microsoft.EntityFrameworkCore;
 using Ecommerce.Api.DTOs;
+using Ecommerce.Api.Models;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
-namespace Ecommerce.Api.Controllers
+namespace Ecommerce.Api.Controllers;
+
+[ApiController]
+[Route("products")]
+[Authorize(Roles = "Admin")]
+public class ProductsController(AppDbContext db) : ControllerBase
 {
-    [ApiController]
-    [Route("products")]
-    [Authorize(Roles = "Admin")]
-    public class ProductsController : ControllerBase
+    [HttpGet]
+    [AllowAnonymous]
+    public async Task<ActionResult<IReadOnlyCollection<ProductResponse>>> GetAll()
     {
-        private readonly AppDbContext _db;
-
-        public ProductsController(AppDbContext db)
-        {
-            _db = db;
-        }
-
-        [HttpGet]
-        [AllowAnonymous]
-        public async Task<IActionResult> GetAll() =>
-            Ok(await _db.Products.AsNoTracking().OrderBy(product => product.Name).ToListAsync());
-
-        [HttpGet("{id:int}")]
-        [AllowAnonymous]
-        public async Task<IActionResult> GetById(int id)
-        {
-            var product = await _db.Products.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id);
-            return product is null ? NotFound() : Ok(product);
-        }
-
-        [HttpPost]
-        public async Task<IActionResult> Create([FromBody] ProductDto dto)
-        {
-            if (string.IsNullOrWhiteSpace(dto.Name))
-                return BadRequest("Product name cannot be blank.");
-
-            var product = new Product { Name = dto.Name.Trim(), Price = dto.Price, Stock = dto.Stock };
-            _db.Products.Add(product);
-            await _db.SaveChangesAsync();
-            return CreatedAtAction(nameof(GetById), new { id = product.Id }, product);
-        }
-
-        [HttpPut("{id:int}")]
-        public async Task<IActionResult> Update(int id, [FromBody] ProductDto dto)
-        {
-            if (string.IsNullOrWhiteSpace(dto.Name))
-                return BadRequest("Product name cannot be blank.");
-
-            var product = await _db.Products.FindAsync(id);
-            if (product is null) return NotFound();
-            product.Name = dto.Name.Trim();
-            product.Price = dto.Price;
-            product.Stock = dto.Stock;
-            await _db.SaveChangesAsync();
-            return Ok(product);
-        }
-
-        [HttpDelete("{id:int}")]
-        public async Task<IActionResult> Delete(int id)
-        {
-            var product = await _db.Products.FindAsync(id);
-            if (product is null) return NotFound();
-            if (await _db.OrderItems.AnyAsync(item => item.ProductId == id))
-                return Conflict("This product is referenced by an order and cannot be deleted.");
-
-            _db.Products.Remove(product);
-            await _db.SaveChangesAsync();
-            return NoContent();
-        }
+        var products = await db.Products.AsNoTracking().OrderBy(product => product.Name).ToListAsync();
+        return Ok(products.Select(ToResponse).ToArray());
     }
+
+    [HttpGet("{id:int}")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ProductResponse>> GetById(int id)
+    {
+        var product = await db.Products.AsNoTracking()
+            .FirstOrDefaultAsync(candidate => candidate.Id == id);
+        return product is null ? NotFound() : Ok(ToResponse(product));
+    }
+
+    [HttpPost]
+    public async Task<ActionResult<ProductResponse>> Create([FromBody] ProductDto dto)
+    {
+        var product = new Product { Name = dto.Name.Trim(), Price = dto.Price, Stock = dto.Stock };
+        db.Products.Add(product);
+        await db.SaveChangesAsync();
+        return CreatedAtAction(nameof(GetById), new { id = product.Id }, ToResponse(product));
+    }
+
+    [HttpPut("{id:int}")]
+    public async Task<ActionResult<ProductResponse>> Update(int id, [FromBody] ProductDto dto)
+    {
+        var product = await db.Products.FindAsync(id);
+        if (product is null) return NotFound();
+
+        product.Name = dto.Name.Trim();
+        product.Price = dto.Price;
+        product.Stock = dto.Stock;
+        await db.SaveChangesAsync();
+        return Ok(ToResponse(product));
+    }
+
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var product = await db.Products.FindAsync(id);
+        if (product is null) return NotFound();
+        if (await db.OrderItems.AnyAsync(item => item.ProductId == id))
+        {
+            return Conflict(new ProblemDetails
+            {
+                Status = StatusCodes.Status409Conflict,
+                Title = "Product cannot be deleted",
+                Detail = "This product is referenced by an order."
+            });
+        }
+
+        db.Products.Remove(product);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    private static ProductResponse ToResponse(Product product) =>
+        new(product.Id, product.Name, product.Price, product.Stock);
 }
