@@ -1,34 +1,33 @@
-using Microsoft.AspNetCore.Mvc;
-using Ecommerce.Api.DTOs;
 using Ecommerce.Api.Data;
-using Ecommerce.Api.Models;
+using Ecommerce.Api.DTOs;
 using Ecommerce.Api.Services;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
-namespace Ecommerce.Api.Controllers
+namespace Ecommerce.Api.Controllers;
+
+[ApiController]
+[Route("auth")]
+public class AuthController(AppDbContext db, JwtService jwtService) : ControllerBase
 {
-    [ApiController]
-    [Route("auth")]
-    public class AuthController : ControllerBase
+    [HttpPost("login")]
+    [ProducesResponseType<LoginResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<LoginResponse>> Login([FromBody] LoginRequest request)
     {
-        private readonly AppDbContext _db;
-        private readonly JwtService _jwt;
-
-        public AuthController(AppDbContext db, JwtService jwt)
+        var username = request.Username.Trim();
+        var user = await db.Users.SingleOrDefaultAsync(candidate => candidate.Username == username);
+        if (user is null || !PasswordHasher.Verify(request.Password, user.PasswordHash))
         {
-            _db = db;
-            _jwt = jwt;
+            return Unauthorized(new ProblemDetails
+            {
+                Status = StatusCodes.Status401Unauthorized,
+                Title = "Unauthorized",
+                Detail = "Invalid username or password."
+            });
         }
 
-        [HttpPost("login")]
-        public async Task<IActionResult> Login([FromBody] LoginRequest req)
-        {
-            var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == req.Username);
-            if (user == null || !PasswordHasher.Verify(req.Password, user.PasswordHash))
-                return Unauthorized("Usuário ou senha inválidos");
-
-            var token = _jwt.GenerateToken(user);
-            return Ok(new { token });
-        }
+        return Ok(new LoginResponse(jwtService.GenerateToken(user)));
     }
 }

@@ -2,6 +2,7 @@ using Ecommerce.Api.Data;
 using Ecommerce.Api.DTOs;
 using Ecommerce.Api.Models;
 using Ecommerce.Api.Services;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -19,8 +20,9 @@ public sealed class OrderServiceTests
 
         Assert.True(result.Success, result.Message);
         Assert.NotNull(result.Order);
+        Assert.Equal(StatusCodes.Status201Created, result.StatusCode);
         Assert.Equal(20m, result.Order.Total);
-        Assert.Equal("PendingPayment", result.Order.Status);
+        Assert.Equal(OrderStatuses.PendingPayment, result.Order.Status);
         Assert.Equal(3, await database.Context.Products.Where(p => p.Id == 1).Select(p => p.Stock).SingleAsync());
     }
 
@@ -30,7 +32,9 @@ public sealed class OrderServiceTests
         await using var database = await TestDatabase.CreateAsync();
         var service = new OrderService(database.Context, NullLogger<OrderService>.Instance);
         var result = await service.CreateOrderAsync(database.CustomerId, []);
+
         Assert.False(result.Success);
+        Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);
         Assert.Equal(0, await database.Context.Orders.CountAsync());
     }
 
@@ -40,7 +44,9 @@ public sealed class OrderServiceTests
         await using var database = await TestDatabase.CreateAsync();
         var service = new OrderService(database.Context, NullLogger<OrderService>.Instance);
         var result = await service.CreateOrderAsync(database.CustomerId, [new OrderItemReq(2, 2)]);
+
         Assert.False(result.Success);
+        Assert.Equal(StatusCodes.Status409Conflict, result.StatusCode);
         Assert.Equal(1, await database.Context.Products.Where(p => p.Id == 2).Select(p => p.Stock).SingleAsync());
         Assert.Equal(0, await database.Context.Orders.CountAsync());
     }
@@ -50,32 +56,63 @@ public sealed class OrderServiceTests
     {
         await using var database = await TestDatabase.CreateAsync();
         var service = new OrderService(database.Context, NullLogger<OrderService>.Instance);
-        var result = await service.CreateOrderAsync(database.CustomerId, [new OrderItemReq(1, 1), new OrderItemReq(1, 2)]);
+        var result = await service.CreateOrderAsync(
+            database.CustomerId, [new OrderItemReq(1, 1), new OrderItemReq(1, 2)]);
+
         Assert.True(result.Success, result.Message);
-        var item = Assert.Single(result.Order!.Items);
+        Assert.NotNull(result.Order);
+        var item = Assert.Single(result.Order.Items);
         Assert.Equal(3, item.Quantity);
         Assert.Equal(30m, result.Order.Total);
     }
 
     [Fact]
-    public async Task ConfirmPaymentAsync_RejectsAnotherCustomerAndDuplicatePayment()
+    public async Task CreateOrderAsync_ReturnsNotFoundForUnknownProduct()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var service = new OrderService(database.Context, NullLogger<OrderService>.Instance);
+        var result = await service.CreateOrderAsync(database.CustomerId, [new OrderItemReq(999, 1)]);
+
+        Assert.False(result.Success);
+        Assert.Equal(StatusCodes.Status404NotFound, result.StatusCode);
+        Assert.Equal(5, await database.Context.Products.Where(p => p.Id == 1).Select(p => p.Stock).SingleAsync());
+        Assert.Equal(0, await database.Context.Orders.CountAsync());
+    }
+
+    [Fact]
+    public async Task ConfirmPaymentAsync_RejectsAnotherCustomer()
     {
         await using var database = await TestDatabase.CreateAsync();
         var service = new OrderService(database.Context, NullLogger<OrderService>.Instance);
         var created = await service.CreateOrderAsync(database.CustomerId, [new OrderItemReq(1, 1)]);
         Assert.True(created.Success, created.Message);
 
-        var forbidden = await service.ConfirmPaymentAsync(created.Order!.Id, database.CustomerId + 100, "Client", "Pix");
-        Assert.False(forbidden.Success);
-        Assert.Equal("PendingPayment", (await database.Context.Orders.SingleAsync()).Status);
+        var result = await service.ConfirmPaymentAsync(created.Order!.Id, database.CustomerId + 100, "Client", "Pix");
 
-        var paid = await service.ConfirmPaymentAsync(created.Order.Id, database.CustomerId, "Client", "Pix");
+        Assert.False(result.Success);
+        Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
+        Assert.Equal(OrderStatuses.PendingPayment, (await database.Context.Orders.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task ConfirmPaymentAsync_StoresMethodAndRejectsDuplicatePayment()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var service = new OrderService(database.Context, NullLogger<OrderService>.Instance);
+        var created = await service.CreateOrderAsync(database.CustomerId, [new OrderItemReq(1, 1)]);
+        Assert.True(created.Success, created.Message);
+
+        var paid = await service.ConfirmPaymentAsync(created.Order!.Id, database.CustomerId, "Client", "pix");
+
         Assert.True(paid.Success, paid.Message);
-        Assert.Equal("Paid", paid.Order!.Status);
+        Assert.Equal(OrderStatuses.Paid, paid.Order!.Status);
+        Assert.Equal("Pix", paid.Order.PaymentMethod);
         Assert.NotNull(paid.Order.PaidAt);
 
         var repeated = await service.ConfirmPaymentAsync(created.Order.Id, database.CustomerId, "Client", "Card");
+
         Assert.False(repeated.Success);
+        Assert.Equal(StatusCodes.Status409Conflict, repeated.StatusCode);
     }
 
     private sealed class TestDatabase : IAsyncDisposable
