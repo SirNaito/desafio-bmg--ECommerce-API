@@ -29,3 +29,6 @@ jobs:
 
       - name: Publish API
         run: dotnet publish Ecommerce.Api/Ecommerce.Api.csproj --configuration Release --no-restore
+
+      - name: Build Docker image
+        run: docker build --tag ecommerce-api:ci .
