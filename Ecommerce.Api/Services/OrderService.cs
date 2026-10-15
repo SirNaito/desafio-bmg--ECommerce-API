@@ -96,6 +96,7 @@ public class OrderService
             return (false, "Only orders awaiting payment can be paid", null);
 
         order.Status = "Paid";
+        order.PaymentMethod = paymentMethod;
         order.PaidAt = DateTime.UtcNow;
         try
         {
