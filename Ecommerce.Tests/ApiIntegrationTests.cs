@@ -90,7 +90,7 @@ public sealed class ApiIntegrationTests : IClassFixture<IntegrationTestFactory>
     private async Task<string> LoginAsync(string username, string password)
     {
         var response = await _client.PostAsJsonAsync("/auth/login", new LoginRequest(username, password));
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(response.IsSuccessStatusCode, $"Login failed with {response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
 
         var login = await response.Content.ReadFromJsonAsync<LoginResponse>();
         Assert.NotNull(login);
