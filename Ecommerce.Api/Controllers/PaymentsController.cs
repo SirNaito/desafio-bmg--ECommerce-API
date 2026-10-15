@@ -17,23 +17,22 @@ namespace Ecommerce.Api.Controllers
             _orderService = orderService;
         }
 
-        [HttpPost("pix/{orderId}")]
-        public async Task<IActionResult> PayPix(int orderId)
-        {
-            int userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
-            var role = User.FindFirstValue(ClaimTypes.Role) ?? "Client";
-            var result = await _orderService.ConfirmPaymentAsync(orderId, userId, role);
-            if (!result.Success) return BadRequest(result.Message);
-            return Ok(result.Order);
-        }
+        [HttpPost("pix/{orderId:int}")]
+        public Task<IActionResult> PayPix(int orderId) => ConfirmPayment(orderId, "Pix");
 
-        [HttpPost("card/{orderId}")]
-        public async Task<IActionResult> PayCard(int orderId)
+        [HttpPost("card/{orderId:int}")]
+        public Task<IActionResult> PayCard(int orderId) => ConfirmPayment(orderId, "Card");
+
+        private async Task<IActionResult> ConfirmPayment(int orderId, string paymentMethod)
         {
-            int userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
+            if (!int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+                return Unauthorized();
+
             var role = User.FindFirstValue(ClaimTypes.Role) ?? "Client";
-            var result = await _orderService.ConfirmPaymentAsync(orderId, userId, role);
-            if (!result.Success) return BadRequest(result.Message);
+            var result = await _orderService.ConfirmPaymentAsync(orderId, userId, role, paymentMethod);
+            if (!result.Success)
+                return BadRequest(result.Message);
+
             return Ok(result.Order);
         }
     }
