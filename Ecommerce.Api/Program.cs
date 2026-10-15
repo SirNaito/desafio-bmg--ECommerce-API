@@ -1,50 +1,48 @@
-﻿using Ecommerce.Api.Data;
-using Ecommerce.Api.Services;
-using Ecommerce.Api.Models;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.InMemory;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using Ecommerce.Api.Data;
+using Ecommerce.Api.Models;
+using Ecommerce.Api.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
-
-Console.WriteLine($"Environment: {builder.Environment.EnvironmentName}");
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-
-builder.Services.AddDbContext<AppDbContext>(opt =>
-    opt.UseInMemoryDatabase("EcommerceDb"));
-
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")
+        ?? "Data Source=ecommerce.db"));
 builder.Services.AddScoped<OrderService>();
 builder.Services.AddSingleton<JwtService>();
 
-var jwtSecret = builder.Configuration["Jwt:Secret"] ?? "dev-secret";
-var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "BigEcom";
-var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "BigEcomAudience";
+var jwtSecret = builder.Configuration["Jwt:Secret"];
+if (string.IsNullOrWhiteSpace(jwtSecret) || Encoding.UTF8.GetByteCount(jwtSecret) < 32)
+{
+    throw new InvalidOperationException(
+        "Jwt:Secret must be configured and contain at least 32 bytes.");
+}
 
-builder.Services.AddAuthentication(options =>
-{
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-})
-.AddJwtBearer(options =>
-{
-    options.TokenValidationParameters = new TokenValidationParameters
+var issuer = builder.Configuration["Jwt:Issuer"] ?? "BigEcom";
+var audience = builder.Configuration["Jwt:Audience"] ?? "BigEcomAudience";
+var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret));
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
     {
-        ValidateIssuer = true,
-        ValidateAudience = true,
-        ValidateIssuerSigningKey = true,
-        ValidIssuer = jwtIssuer,
-        ValidAudience = jwtAudience,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
-        ClockSkew = TimeSpan.Zero
-    };
-});
-
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = issuer,
+            ValidateAudience = true,
+            ValidAudience = audience,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = key,
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(1)
+        };
+    });
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
@@ -55,41 +53,39 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-//Banco de dados em memória
-using (var scope = app.Services.CreateScope())
+await using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.EnsureCreated();
+    await db.Database.EnsureCreatedAsync();
 
-    if (!db.Users.Any())
+    if (app.Environment.IsDevelopment())
     {
-        db.Users.AddRange(
-            new User { Username = "Admin", PasswordHash = PasswordHasher.Hash("Pass123@"), Role = "Admin" },
-            new User { Username = "Gabriel", PasswordHash = PasswordHasher.Hash("Pass123@"), Role = "Client" },
-            new User { Username = "Sayo", PasswordHash = PasswordHasher.Hash("Pass@123"), Role = "Client" }
-        );
-    }
+        if (!await db.Users.AnyAsync())
+        {
+            db.Users.AddRange(
+                new User { Username = "Admin", PasswordHash = PasswordHasher.Hash("Pass123@"), Role = "Admin" },
+                new User { Username = "Gabriel", PasswordHash = PasswordHasher.Hash("Pass123@"), Role = "Client" },
+                new User { Username = "Sayo", PasswordHash = PasswordHasher.Hash("Pass@123"), Role = "Client" });
+        }
 
-    if (!db.Products.Any())
-    {
-        db.Products.AddRange(
-            new Product { Name = "Steam Deck Oled 512GB", Price = 4999.90m, Stock = 200},
-            new Product { Name = "Rog Ally Pro 1TB", Price = 7999.90m, Stock = 100},
-            new Product { Name = "Nintendo Switch Oled", Price = 3499.90m, Stock = 300},
-            new Product { Name = "Xbox Series S", Price = 2499.90m, Stock = 150},
-            new Product { Name = "Playstation 5", Price = 4499.90m, Stock = 180}
-        );
-    }
+        if (!await db.Products.AnyAsync())
+        {
+            db.Products.AddRange(
+                new Product { Name = "Steam Deck OLED 512GB", Price = 4999.90m, Stock = 200 },
+                new Product { Name = "ROG Ally 1TB", Price = 7999.90m, Stock = 100 },
+                new Product { Name = "Nintendo Switch OLED", Price = 3499.90m, Stock = 300 },
+                new Product { Name = "Xbox Series S", Price = 2499.90m, Stock = 150 },
+                new Product { Name = "PlayStation 5", Price = 4499.90m, Stock = 180 });
+        }
 
-    db.SaveChanges();
+        await db.SaveChangesAsync();
+    }
 }
 
 app.Run();
 
-// Para executar o Swagger em uma URL específica, use o seguinte comando:
-// dotnet run --urls "http://localhost:5162/Swagger"
+public partial class Program { }
