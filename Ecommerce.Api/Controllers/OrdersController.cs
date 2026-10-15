@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Ecommerce.Api.Services;
 using Ecommerce.Api.DTOs;
 using System.Security.Claims;
+using Microsoft.EntityFrameworkCore;
 
 namespace Ecommerce.Api.Controllers
 {
@@ -26,7 +27,7 @@ namespace Ecommerce.Api.Controllers
 
             var result = await _service.CreateOrderAsync(userId, req.Items);
             if (!result.Success) return BadRequest(result.Message);
-            return CreatedAtAction(nameof(MyOrders), new { id = result.Order!.Id }, result.Order);
+            return Ok(result.Order);
         }
 
         [HttpGet("my")]
