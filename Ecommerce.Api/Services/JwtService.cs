@@ -1,41 +1,33 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Ecommerce.Api.Models;
+using Microsoft.IdentityModel.Tokens;
 
-namespace Ecommerce.Api.Services
+namespace Ecommerce.Api.Services;
+
+public class JwtService(IConfiguration configuration)
 {
-    public class JwtService
+    public string GenerateToken(User user)
     {
-        private readonly IConfiguration _cfg;
-        public JwtService(IConfiguration cfg) { _cfg = cfg; }
+        var secret = configuration["Jwt:Secret"]
+            ?? throw new InvalidOperationException("Jwt:Secret is not configured.");
+        var issuer = configuration["Jwt:Issuer"] ?? "BigEcom";
+        var audience = configuration["Jwt:Audience"] ?? "BigEcomAudience";
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
+        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-        public string GenerateToken(User user)
+        var claims = new[]
         {
-            var secret = _cfg["Jwt:Secret"] ?? "dev-secret";
-            var issuer = _cfg["Jwt:Issuer"] ?? "BigEcom";
-            var audience = _cfg["Jwt:Audience"] ?? "BigEcomAudience";
+            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new Claim(ClaimTypes.Name, user.Username),
+            new Claim(ClaimTypes.Role, user.Role)
+        };
 
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
-            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+        var token = new JwtSecurityToken(
+            issuer, audience, claims, DateTime.UtcNow,
+            DateTime.UtcNow.AddMinutes(60), credentials);
 
-            var claims = new List<Claim>
-            {
-                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new Claim(ClaimTypes.Name, user.Username),
-                new Claim(ClaimTypes.Role, user.Role)
-            };
-
-            var token = new JwtSecurityToken(
-                issuer: issuer,
-                audience: audience,
-                claims: claims,
-                expires: DateTime.UtcNow.AddHours(6),
-                signingCredentials: creds
-            );
-
-            return new JwtSecurityTokenHandler().WriteToken(token);
-        }
+        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }
